@@ -1,0 +1,162 @@
+diff --git a/googletest/include/gtest/gtest-memory.h b/googletest/include/gtest/gtest-memory.h
+new file mode 100644
+index 00000000..7cdfb726
+--- /dev/null
++++ b/googletest/include/gtest/gtest-memory.h
+@@ -0,0 +1,33 @@
++#ifndef GOOGLETEST_INCLUDE_GTEST_GTEST_MEMORY_H_
++#define GOOGLETEST_INCLUDE_GTEST_GTEST_MEMORY_H_
++
++#if GTEST_OS_WINDOWS
++
++#include <functional>
++#include "gtest/internal/gtest-port.h"
++
++namespace testing {
++
++typedef std::function<void*(size_t)> NewOperatorFunction;
++
++typedef std::function<void(void*)> DeleteOperatorFunction;
++
++// Sets the function to be used in case of allocation
++// It's the caller's responsibility to ensure that the function in question does not raise any exceptions
++GTEST_API_ void SetNewOperatorFunction(NewOperatorFunction function);
++
++// Resets the function to be used in case of allocation
++GTEST_API_ void ResetNewOperatorFunction();
++
++// Set the function to be used in case of deallocation
++// It's the caller's responsibility to ensure that the function in question does not raise any exceptions
++GTEST_API_ void SetDeleteOperatorFunction(DeleteOperatorFunction function);
++
++// Resets the function to be used in case of deallocation 
++GTEST_API_ void ResetDeleteOperatorFunction();
++
++}
++
++#endif // GTEST_OS_WINDOWS
++
++#endif // GOOGLETEST_INCLUDE_GTEST_GTEST_MEMORY_H_
+diff --git a/googletest/include/gtest/gtest.h b/googletest/include/gtest/gtest.h
+index 7a5d057c..eea0a5dc 100644
+--- a/googletest/include/gtest/gtest.h
++++ b/googletest/include/gtest/gtest.h
+@@ -63,6 +63,7 @@
+ #include "gtest/internal/gtest-string.h"
+ #include "gtest/gtest-death-test.h"
+ #include "gtest/gtest-matchers.h"
++#include "gtest/gtest-memory.h"
+ #include "gtest/gtest-message.h"
+ #include "gtest/gtest-param-test.h"
+ #include "gtest/gtest-printers.h"
+diff --git a/googletest/src/gtest-all.cc b/googletest/src/gtest-all.cc
+index ad292905..81f1747f 100644
+--- a/googletest/src/gtest-all.cc
++++ b/googletest/src/gtest-all.cc
+@@ -42,6 +42,7 @@
+ #include "src/gtest-death-test.cc"
+ #include "src/gtest-filepath.cc"
+ #include "src/gtest-matchers.cc"
++#include "src/gtest-memory.cc"
+ #include "src/gtest-port.cc"
+ #include "src/gtest-printers.cc"
+ #include "src/gtest-test-part.cc"
+diff --git a/googletest/src/gtest-memory.cc b/googletest/src/gtest-memory.cc
+new file mode 100644
+index 00000000..d0b1eb95
+--- /dev/null
++++ b/googletest/src/gtest-memory.cc
+@@ -0,0 +1,93 @@
++#include "gtest/gtest-memory.h"
++
++#if GTEST_OS_WINDOWS
++
++namespace testing {
++
++NewOperatorFunction newOperatorFunction;
++
++DeleteOperatorFunction deleteOperatorFunction;
++
++GTEST_API_ void SetNewOperatorFunction(NewOperatorFunction function) {
++    newOperatorFunction = function;
++}
++
++GTEST_API_ void ResetNewOperatorFunction() {
++    newOperatorFunction = nullptr;
++}
++
++GTEST_API_ void SetDeleteOperatorFunction(DeleteOperatorFunction function) {
++    deleteOperatorFunction = function;
++}
++
++GTEST_API_ void ResetDeleteOperatorFunction() {
++    deleteOperatorFunction = nullptr;
++}
++
++}
++
++void* newOperatorTemplateFunction(size_t size) {
++    size = size ? size : 1;
++
++    if (testing::newOperatorFunction) {
++        return testing::newOperatorFunction(size); 
++    } 
++
++    void* ptr;
++
++    while ((ptr = std::malloc(size)) == 0) {
++        std::new_handler newHandler = std::get_new_handler(); 
++
++        if (newHandler) {
++            newHandler();
++        } else {
++            throw std::bad_alloc();
++        }
++    }
++
++    return ptr;
++}
++
++void* newOperatorTemplateFunctionNoThrow(size_t size) {
++    void* ptr = nullptr;
++
++    try { 
++        ptr = operator new(size);
++    } catch (...) { }
++
++    return ptr;
++}
++
++void deleteOperatorTemplateFunction(void* ptr) {
++    if (testing::deleteOperatorFunction) {
++        testing::deleteOperatorFunction(ptr);
++    } else {
++        free(ptr); 
++    }  
++}
++
++void* operator new(size_t size) { return newOperatorTemplateFunction(size); }
++
++void* operator new[](size_t size) { return newOperatorTemplateFunction(size); }
++
++void* operator new(size_t size, const std::nothrow_t&) throw() { return newOperatorTemplateFunctionNoThrow(size); }
++
++void* operator new[](size_t size, const std::nothrow_t&) throw() { return newOperatorTemplateFunctionNoThrow(size); }
++
++void operator delete(void* ptr) { deleteOperatorTemplateFunction(ptr); }
++
++void operator delete[](void* ptr) { deleteOperatorTemplateFunction(ptr); }
++
++void operator delete(void* ptr, const std::nothrow_t&) throw() { deleteOperatorTemplateFunction(ptr); }
++
++void operator delete[](void* ptr, const std::nothrow_t&) throw() { deleteOperatorTemplateFunction(ptr); }
++
++void operator delete(void* ptr, size_t) { deleteOperatorTemplateFunction(ptr); }
++
++void operator delete[](void* ptr, size_t) { deleteOperatorTemplateFunction(ptr); }
++
++void operator delete(void* ptr, size_t, const std::nothrow_t&) throw() { deleteOperatorTemplateFunction(ptr); }
++
++void operator delete[](void* ptr, size_t, const std::nothrow_t&) throw() { deleteOperatorTemplateFunction(ptr); }
++
++#endif // GTEST_OS_WINDOWS
